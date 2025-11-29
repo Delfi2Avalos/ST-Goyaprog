@@ -177,3 +177,7 @@ FIREBASE_DATABASE_URL = os.getenv('FIREBASE_DATABASE_URL')
 # ============================
 
 AUTH_USER_MODEL = "usuarios.Usuario"
+
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",
+]

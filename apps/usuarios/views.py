@@ -1,85 +1,92 @@
-from rest_framework import status
-from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.response import Response
+from rest_framework import status
 from django.contrib.auth import authenticate
+from rest_framework_simplejwt.tokens import RefreshToken
 from django.utils import timezone
 
-from .serializers import RegistroPacienteSerializer
 from .models import Usuario
-from .services import enviar_correo_alta, sync_paciente_firebase
+from .serializers import (
+    RegistroPacienteSerializer,
+    LoginSerializer,
+    UsuarioSerializer
+)
 
-from apps.firebase_integration.services import initialize_firebase
-rtdb = initialize_firebase()
+from apps.firebase_integration.services import (
+    firebase_set,
+    firebase_update
+)
 
-# REGISTRO PACIENTE
+
+# ==========================================================
+# REGISTRO DE PACIENTE  (equivalente a tu Node.js)
+# POST /api/usuarios/registro/
+# ==========================================================
+
 class RegistroPacienteView(APIView):
     def post(self, request):
         serializer = RegistroPacienteSerializer(data=request.data)
 
         if not serializer.is_valid():
-            return Response(serializer.errors, status=400)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        usuario = serializer.save()
+        usuario = serializer.save()  # crea el usuario
 
-        enviar_correo_alta(usuario.nombre, usuario.email)
-
-        # SUBE A FIREBASE
-        sync_paciente_firebase(rtdb, usuario.id, {
+        # === Registro espejo en Firebase RTDB ===
+        firebase_set(f"usuarios/pacientes/{usuario.id}", {
             "id_mysql": usuario.id,
             "nombre": usuario.nombre,
             "apellido": usuario.apellido,
             "email": usuario.email,
             "obra_social": usuario.obra_social,
             "detalles_extras": usuario.detalles_extras,
-            "registrado_en": usuario.registrado_en.isoformat()
+            "registrado_en": usuario.registrado_en.isoformat(),
         })
 
         return Response({
             "mensaje": "Usuario registrado correctamente.",
-            "usuario": {
-                "id": usuario.id,
-                "nombre": usuario.nombre,
-                "apellido": usuario.apellido,
-                "email": usuario.email,
-                "tipo": usuario.tipo,
-                "obra_social": usuario.obra_social,
-            }
-        }, status=201)
+            "usuario": UsuarioSerializer(usuario).data
+        }, status=status.HTTP_201_CREATED)
 
 
-# LOGIN
+# ==========================================================
+# LOGIN  (equivalente a tu Node.js)
+# POST /api/usuarios/login/
+# ==========================================================
+
 class LoginView(APIView):
     def post(self, request):
-        email = request.data.get("email", "").strip().lower()
-        contrasena = request.data.get("contrasena")
+        serializer = LoginSerializer(data=request.data)
 
-        user = authenticate(request, email=email, password=contrasena)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        if not user:
-            return Response({"mensaje": "Correo o contraseña incorrectos."}, status=401)
+        email = serializer.validated_data["email"].strip().lower()
+        contrasena = serializer.validated_data["contrasena"]
 
-        refresh = RefreshToken.for_user(user)
+        usuario = authenticate(request, email=email, password=contrasena)
 
-        # Actualizar conexión si es paciente
-        if user.tipo == "paciente":
-            user.ultima_conexion = timezone.now()
-            user.save()
+        if usuario is None:
+            return Response(
+                {"mensaje": "Correo o contraseña incorrectos."},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
 
-            if rtdb:
-                rtdb.ref(f"usuarios/pacientes/{user.id}").update({
-                    "ultima_conexion": user.ultima_conexion.isoformat()
-                })
+        # GENERAR JWT (igual que Node)
+        refresh = RefreshToken.for_user(usuario)
+
+        # Actualizar última conexión
+        usuario.ultima_conexion = timezone.now()
+        usuario.save()
+
+        # === Firebase update si es paciente ===
+        if usuario.tipo == "paciente":
+            firebase_update(f"usuarios/pacientes/{usuario.id}", {
+                "ultima_conexion": usuario.ultima_conexion.isoformat()
+            })
 
         return Response({
             "mensaje": "Login exitoso.",
             "token": str(refresh.access_token),
-            "usuario": {
-                "id": user.id,
-                "nombre": user.nombre,
-                "apellido": user.apellido,
-                "email": user.email,
-                "tipo": user.tipo,
-                "obra_social": user.obra_social,
-            }
-        })
+            "usuario": UsuarioSerializer(usuario).data
+        }, status=status.HTTP_200_OK)

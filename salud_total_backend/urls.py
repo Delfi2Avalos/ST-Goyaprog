@@ -4,6 +4,6 @@ from django.urls import path, include
 urlpatterns = [
     path('admin/', admin.site.urls),
 
-    # Rutas de la app usuarios (registro, login, etc.)
+    # Rutas de usuarios
     path('api/usuarios/', include('apps.usuarios.urls')),
 ]
