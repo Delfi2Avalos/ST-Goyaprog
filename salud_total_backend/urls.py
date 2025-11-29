@@ -6,4 +6,7 @@ urlpatterns = [
 
     # Rutas de usuarios
     path('api/usuarios/', include('apps.usuarios.urls')),
+
+    # Rutas de Administrador / SuperAdmin
+    path('api/admin/', include('apps.administracion.urls')),
 ]
