@@ -11,5 +11,10 @@ urlpatterns = [
     path('api/admin/', include('apps.administracion.urls')),
 
     # Rutas de SuperAdmin
+
     path('api/superadmin/', include('apps.administracion.urls_superadmin')),
+
+    path("api/chat/", include("apps.chat.urls")),
+
 ]
+
